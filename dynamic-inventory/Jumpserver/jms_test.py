@@ -39,8 +39,6 @@ class JumpserverInventory(object):
         self.jms_username = config['jumpserver']['auth']['user']
         self.jms_password = config['jumpserver']['auth']['password']
 
-        # ansible_ssh_common_args: '-o ProxyCommand="ssh -W %h:%p -p 22 -q root@192.168.11.26"'
-
     @staticmethod
     def read_cli():
         parser = argparse.ArgumentParser()
