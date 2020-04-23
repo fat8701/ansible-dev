@@ -10,7 +10,6 @@ import json
 
 CONFIG_FILES = ['/etc/jumpserver/jms.yml', '/etc/ansible/jms.yml']
 URL_AUTH = '%s/api/users/v1/auth/'
-URL_ASSETS = '%s/api/assets/v1/assets/'
 URL_NODES = '%s/api/assets/v1/nodes/'
 URL_NODES_CHILD = '%s/api/assets/v1/nodes/%s/children/'
 URL_NODES_ASSETS = '%s/api/assets/v1/nodes/%s/assets/'
@@ -62,6 +61,7 @@ class JumpserverInventory(object):
         data = dict(_meta=dict(hostvars=dict()))
         # 保存asset id和主机名对应关系字典
         assets_data = dict()
+        assets_isactive = dict()
 
         for node in nodes_data:
             node_id = node['id']
@@ -79,15 +79,16 @@ class JumpserverInventory(object):
             response = requests.get(url_node_assets, headers=header_info)
             node_assets_data = json.loads(response.text)
             for node_assets in node_assets_data:
+                assets_isactive[node_assets['id']] = node_assets['is_active']
+                if node_assets['is_active']:
+                    hostname = node_assets['hostname']
+                    assets_data[node_assets['id']] = hostname
 
-                hostname = node_assets['hostname']
-                assets_data[node_assets['id']] = hostname
-
-                data[node_value]['hosts'].append(hostname)
-                # 初始化字典项
-                data['_meta']['hostvars'][hostname] = dict()
-                data['_meta']['hostvars'][hostname]['ansible_host'] = node_assets['ip']
-                data['_meta']['hostvars'][hostname]['ansible_port'] = node_assets['port']
+                    data[node_value]['hosts'].append(hostname)
+                    # 初始化字典项
+                    data['_meta']['hostvars'][hostname] = dict()
+                    data['_meta']['hostvars'][hostname]['ansible_host'] = node_assets['ip']
+                    data['_meta']['hostvars'][hostname]['ansible_port'] = node_assets['port']
 
         url_sys_users = URL_SYS_USERS % self.jms_server
         response = requests.get(url_sys_users, headers=header_info)
@@ -101,18 +102,20 @@ class JumpserverInventory(object):
                 response = requests.get(url_sys_authinfo, headers=header_info)
                 sys_auth_info = json.loads(response.text)
 
-                if 'priority' not in data['_meta']['hostvars'][assets_data[assets_id]] or \
-                        sys_users_priority > data['_meta']['hostvars'][assets_data[assets_id]]['priority']:
-                    data['_meta']['hostvars'][assets_data[assets_id]]['ansible_user'] = sys_auth_info['username']
-                    data['_meta']['hostvars'][assets_data[assets_id]]['ansible_password'] = sys_auth_info['password']
-                    # data['_meta']['hostvars'][assets_data[assets_id]]['ansible_ssh_private_key_file']
-                    data['_meta']['hostvars'][assets_data[assets_id]]['priority'] = sys_users_priority
+                if assets_isactive[assets_id]:
+                    hostname = assets_data[assets_id]
+                    if 'priority' not in data['_meta']['hostvars'][assets_data[assets_id]] or \
+                            sys_users_priority > data['_meta']['hostvars'][assets_data[assets_id]]['priority']:
+                        data['_meta']['hostvars'][hostname]['ansible_user'] = sys_auth_info['username']
+                        data['_meta']['hostvars'][hostname]['ansible_password'] = sys_auth_info['password']
+                        # data['_meta']['hostvars'][hostname]['ansible_ssh_private_key_file']
+                        data['_meta']['hostvars'][hostname]['priority'] = sys_users_priority
 
-                if sys_auth_info['protocol'] == "rdp":
-                    data['_meta']['hostvars'][assets_data[assets_id]]['ansible_connection'] = "winrm"
-                    data['_meta']['hostvars'][assets_data[assets_id]]['ansible_port'] = 5985
-                    data['_meta']['hostvars'][assets_data[assets_id]]['ansible_winrm_transport'] = "ntlm"
-                    data['_meta']['hostvars'][assets_data[assets_id]]['ansible_winrm_server_cert_validation'] = "ignore"
+                    if sys_auth_info['protocol'] == "rdp":
+                        data['_meta']['hostvars'][hostname]['ansible_connection'] = "winrm"
+                        data['_meta']['hostvars'][hostname]['ansible_port'] = 5985
+                        data['_meta']['hostvars'][hostname]['ansible_winrm_transport'] = "ntlm"
+                        data['_meta']['hostvars'][hostname]['ansible_winrm_server_cert_validation'] = "ignore"
         return data
 
     def __init__(self):
