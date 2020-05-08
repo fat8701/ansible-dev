@@ -53,16 +53,17 @@ class JumpserverInventory(object):
         }
 
     def get_list(self, token):
-        url_node = URL_NODES % self.jms_server
-        header_info = {"Authorization": 'Bearer ' + token}
-        response = requests.get(url_node, headers=header_info)
-        nodes_data = json.loads(response.text)
         # data = {'_meta': {'hostvars': {}}}
         data = dict(_meta=dict(hostvars=dict()))
         # 保存asset id和主机名对应关系字典
         assets_data = dict()
         assets_isactive = dict()
+        temp_hostvars = dict()
 
+        url_node = URL_NODES % self.jms_server
+        header_info = {"Authorization": 'Bearer ' + token}
+        response = requests.get(url_node, headers=header_info)
+        nodes_data = json.loads(response.text)
         for node in nodes_data:
             node_id = node['id']
             node_value = node['value']
@@ -83,12 +84,11 @@ class JumpserverInventory(object):
                 if node_assets['is_active']:
                     hostname = node_assets['hostname']
                     assets_data[node_assets['id']] = hostname
-
                     data[node_value]['hosts'].append(hostname)
                     # 初始化字典项
-                    data['_meta']['hostvars'][hostname] = dict()
-                    data['_meta']['hostvars'][hostname]['ansible_host'] = node_assets['ip']
-                    data['_meta']['hostvars'][hostname]['ansible_port'] = node_assets['port']
+                    temp_hostvars[hostname] = dict()
+                    temp_hostvars[hostname]['ansible_host'] = node_assets['ip']
+                    temp_hostvars[hostname]['ansible_port'] = node_assets['port']
 
         url_sys_users = URL_SYS_USERS % self.jms_server
         response = requests.get(url_sys_users, headers=header_info)
@@ -104,18 +104,25 @@ class JumpserverInventory(object):
 
                 if assets_isactive[assets_id]:
                     hostname = assets_data[assets_id]
-                    if 'priority' not in data['_meta']['hostvars'][assets_data[assets_id]] or \
-                            sys_users_priority > data['_meta']['hostvars'][assets_data[assets_id]]['priority']:
+                    if hostname not in data['_meta']['hostvars']:
+                        data['_meta']['hostvars'][hostname] = dict()
+
+                    if 'priority' not in temp_hostvars[hostname] or \
+                            sys_users_priority > temp_hostvars[hostname]['priority']:
+
+                        temp_hostvars[hostname]['priority'] = sys_users_priority
+                        data['_meta']['hostvars'][hostname].clear()
                         data['_meta']['hostvars'][hostname]['ansible_user'] = sys_auth_info['username']
                         data['_meta']['hostvars'][hostname]['ansible_password'] = sys_auth_info['password']
-                        # data['_meta']['hostvars'][hostname]['ansible_ssh_private_key_file']
-                        data['_meta']['hostvars'][hostname]['priority'] = sys_users_priority
+                        data['_meta']['hostvars'][hostname]['ansible_host'] = temp_hostvars[hostname]['ansible_host']
+                        data['_meta']['hostvars'][hostname]['ansible_port'] = temp_hostvars[hostname]['ansible_port']
 
-                    if sys_auth_info['protocol'] == "rdp":
-                        data['_meta']['hostvars'][hostname]['ansible_connection'] = "winrm"
-                        data['_meta']['hostvars'][hostname]['ansible_port'] = 5985
-                        data['_meta']['hostvars'][hostname]['ansible_winrm_transport'] = "ntlm"
-                        data['_meta']['hostvars'][hostname]['ansible_winrm_server_cert_validation'] = "ignore"
+                        if sys_auth_info['protocol'] == "rdp":
+                            data['_meta']['hostvars'][hostname]['ansible_connection'] = "winrm"
+                            data['_meta']['hostvars'][hostname]['ansible_port'] = 5985
+                            data['_meta']['hostvars'][hostname]['ansible_winrm_transport'] = "ntlm"
+                            data['_meta']['hostvars'][hostname]['ansible_winrm_server_cert_validation'] = "ignore"
+
         return data
 
     def __init__(self):
